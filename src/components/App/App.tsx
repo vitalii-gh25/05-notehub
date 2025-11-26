@@ -1,79 +1,69 @@
-import { useEffect, useState } from "react";
-import ReactPaginate from "react-paginate";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import toast from "react-hot-toast";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { FetchNotesResponse } from "../../services/noteService";
+import { fetchNotes } from "../../services/noteService";
+import NoteList from "../NoteList/NoteList";
+import NoteForm from "../NoteForm/NoteForm";
+import Modal from "../Modal/Modal";
+import Pagination from "../Pagination/Pagination";
+import SearchBox from "../SearchBox/SearchBox";
+import { useDebounce } from "use-debounce";
+import css from "./App.module.css";
 
-import SearchBar from "../SearchBar/SearchBar";
-import MovieGrid from "../MovieGrid/MovieGrid";
-import MovieModal from "../MovieModal/MovieModal";
-import Loader from "../Loader/Loader";
-import ErrorMessage from "../ErrorMessage/ErrorMessage";
-import { fetchMovies } from "../../services/movieService";
-import type { Movie } from "../../types/movie";
-import styles from "./App.module.css";
+const App = () => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch] = useDebounce(searchInput, 500);
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
-export default function App() {
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
-
-  const { data, isLoading, isError, isSuccess } = useQuery({
-    queryKey: ["movies", query, page],
-    queryFn: () => fetchMovies(query, page),
-    enabled: query !== "",
-    placeholderData: keepPreviousData,
-  });
-
-  const totalPages = data?.total_pages ?? 0;
-  const movies = data?.results ?? [];
-
-  const handleSearch = (newQuery: string) => {
-    setQuery(newQuery);
-    setPage(1);
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    setCurrentPage(1);
   };
 
-  // 🔔 Показуємо toast, якщо запит успішний, але фільмів нема
-  useEffect(() => {
-    if (isSuccess && data && data.total_results === 0) {
-      toast("Фільми не знайдено", {
-        icon: "⚠️",
-      });
-    }
-  }, [isSuccess, data]);
+  const { data, isLoading, isError } = useQuery<FetchNotesResponse, Error>({
+    queryKey: ["notes", currentPage, debouncedSearch],
+    queryFn: ({ signal }) =>
+      fetchNotes({
+        page: currentPage,
+        perPage: 12,
+        search: debouncedSearch,
+        signal,
+      }),
+    staleTime: 1000 * 30,
+  });
+
+  if (isLoading) return <p className={css.message}>Loading notes...</p>;
+  if (isError || !data)
+    return <p className={css.message}>Error loading notes.</p>;
 
   return (
-    <div className={styles.app}>
-      <SearchBar onSubmit={handleSearch} />
+    <div className={css.app}>
+      <header className={css.toolbar}>
+        <SearchBox value={searchInput} onChange={handleSearchChange} />
+        {data.totalPages > 1 && (
+          <Pagination
+            page={currentPage}
+            totalPages={data.totalPages}
+            setPage={setCurrentPage}
+          />
+        )}
+        <button onClick={() => setIsFormOpen(true)} className={css.button}>
+          Create Note
+        </button>
+      </header>
 
-      {isLoading && <Loader />}
-      {isError && <ErrorMessage />}
+      <main className={css.main}>
+        {isFormOpen && (
+          <Modal onClose={() => setIsFormOpen(false)}>
+            <NoteForm onClose={() => setIsFormOpen(false)} />
+          </Modal>
+        )}
 
-      {/* Пагінація ТІЛЬКИ якщо є результати */}
-      {movies.length > 0 && totalPages > 1 && (
-        <ReactPaginate
-          pageCount={totalPages}
-          pageRangeDisplayed={5}
-          marginPagesDisplayed={1}
-          onPageChange={({ selected }) => setPage(selected + 1)}
-          forcePage={page - 1}
-          containerClassName={styles.pagination}
-          activeClassName={styles.active}
-          nextLabel="→"
-          previousLabel="←"
-        />
-      )}
-
-      {/* ❗ MovieGrid тепер рендериться лише коли є фільми */}
-      {movies.length > 0 && (
-        <MovieGrid movies={movies} onSelect={setSelectedMovie} />
-      )}
-
-      {selectedMovie && (
-        <MovieModal
-          movie={selectedMovie}
-          onClose={() => setSelectedMovie(null)}
-        />
-      )}
+        {data.notes.length > 0 && <NoteList notes={data.notes} />}
+      </main>
     </div>
   );
-}
+};
+
+export default App;
