@@ -1,51 +1,59 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { FetchNotesResponse } from "../../services/noteService";
+import { useDebouncedCallback } from "use-debounce";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchNotes } from "../../services/noteService";
+import type { Note } from "../../types/note";
 import NoteList from "../NoteList/NoteList";
 import NoteForm from "../NoteForm/NoteForm";
 import Modal from "../Modal/Modal";
 import Pagination from "../Pagination/Pagination";
-import SearchBox from "../SearchBox/SearchBox";
-import { useDebounce } from "use-debounce";
 import css from "./App.module.css";
 
-const App = () => {
+export default function App() {
+  const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [searchInput, setSearchInput] = useState("");
-  const [debouncedSearch] = useDebounce(searchInput, 500);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
-  const handleSearchChange = (value: string) => {
-    setSearchInput(value);
-    setCurrentPage(1);
-  };
+  const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery<FetchNotesResponse, Error>({
-    queryKey: ["notes", currentPage, debouncedSearch],
-    queryFn: ({ signal }) =>
-      fetchNotes({
-        page: currentPage,
-        perPage: 12,
-        search: debouncedSearch,
-        signal,
-      }),
-    staleTime: 1000 * 30,
+  const updateSearchQuery = useDebouncedCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setSearchQuery(e.target.value);
+      setCurrentPage(1);
+    },
+    900
+  );
+
+  const { data, isFetching, isError } = useQuery({
+    queryKey: ["notes", currentPage, searchQuery],
+    queryFn: () =>
+      fetchNotes({ page: currentPage, perPage: 12, search: searchQuery }),
+    placeholderData: () =>
+      queryClient.getQueryData(["notes", currentPage - 1, searchQuery]),
   });
 
-  if (isLoading) return <p className={css.message}>Loading notes...</p>;
-  if (isError || !data)
-    return <p className={css.message}>Error loading notes.</p>;
+  if (isFetching && !data)
+    return <p className={css.message}>Loading notes...</p>;
+  if (isError) return <p className={css.message}>Error loading notes.</p>;
+
+  const notes: Note[] = data?.notes || [];
+  const totalPages = data?.totalPages || 1;
 
   return (
     <div className={css.app}>
       <header className={css.toolbar}>
-        <SearchBox value={searchInput} onChange={handleSearchChange} />
-        {data.totalPages > 1 && (
+        <input
+          type="text"
+          defaultValue={searchQuery}
+          onChange={updateSearchQuery}
+          placeholder="Search notes"
+          className={css.input}
+        />
+        {totalPages > 1 && (
           <Pagination
-            page={currentPage}
-            totalPages={data.totalPages}
+            totalPages={totalPages}
             setPage={setCurrentPage}
+            currentPage={currentPage}
           />
         )}
         <button onClick={() => setIsFormOpen(true)} className={css.button}>
@@ -60,10 +68,12 @@ const App = () => {
           </Modal>
         )}
 
-        {data.notes.length > 0 && <NoteList notes={data.notes} />}
+        {notes.length > 0 ? (
+          <NoteList notes={notes} />
+        ) : (
+          <p className={css.message}>No notes found.</p>
+        )}
       </main>
     </div>
   );
-};
-
-export default App;
+}
