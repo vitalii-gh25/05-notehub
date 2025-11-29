@@ -7,22 +7,21 @@ import NoteList from "../NoteList/NoteList";
 import NoteForm from "../NoteForm/NoteForm";
 import Modal from "../Modal/Modal";
 import Pagination from "../Pagination/Pagination";
+import SearchBox from "../SearchBox/SearchBox";
 import css from "./App.module.css";
 
 export default function App() {
-  const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const queryClient = useQueryClient();
 
-  const updateSearchQuery = useDebouncedCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setSearchQuery(e.target.value);
-      setCurrentPage(1);
-    },
-    900
-  );
+  // Дебаунсована функція зміни пошуку
+  const debouncedSearch = useDebouncedCallback((value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  }, 900);
 
   const { data, isFetching, isError } = useQuery({
     queryKey: ["notes", currentPage, searchQuery],
@@ -42,13 +41,9 @@ export default function App() {
   return (
     <div className={css.app}>
       <header className={css.toolbar}>
-        <input
-          type="text"
-          defaultValue={searchQuery}
-          onChange={updateSearchQuery}
-          placeholder="Search notes"
-          className={css.input}
-        />
+        {/* Використовуємо SearchBox з defaultValue для неконтрольованого input */}
+        <SearchBox defaultValue={searchQuery} onChange={debouncedSearch} />
+
         {totalPages > 1 && (
           <Pagination
             totalPages={totalPages}
@@ -56,6 +51,7 @@ export default function App() {
             currentPage={currentPage}
           />
         )}
+
         <button onClick={() => setIsFormOpen(true)} className={css.button}>
           Create Note
         </button>
